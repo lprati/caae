@@ -4,10 +4,18 @@
  * Insere um menu personalizado que permite a execução das outras funcionalidades.
  */
 function onOpen() {
-  var menu = [{name: 'Configurar entrevistas', functionName: 'configuraEntrevistas_'},
-              {name: 'Ajuda', functionName: 'displayHelp_'},
-              {name: 'Mostrar propriedades', functionName: 'displayProps_'}
-             ];
+  if (PropertiesService.getScriptProperties().getProperty('cal_id')) {
+    var menu = [{name: 'Configurar entrevistas', functionName: 'configuraEntrevistas_'},
+                {name: 'Mostrar propriedades', functionName: 'displayProps_'},
+                {name: 'Ajuda', functionName: 'displayHelp_'}
+               ];
+  }
+  else {
+    var menu = [{name: 'Resetar entrevistas', functionName: 'configuraEntrevistas_'},
+                {name: 'Mostrar propriedades', functionName: 'displayProps_'},
+                {name: 'Ajuda', functionName: 'displayHelp_'}
+               ];  
+  }
   SpreadsheetApp.getActive().addMenu('Entrevistas', menu);
 }
 
@@ -15,7 +23,6 @@ function displayProps_() {
   for (var prop in PropertiesService.getScriptProperties().getProperties()) {
     Browser.msgBox(prop + ' ' + PropertiesService.getScriptProperties().getProperty(prop))
   }
-  
 }
 
 /**
@@ -33,34 +40,47 @@ function displayHelp_() {
  * para configurar o formulário Forms (2) e gerar os eventos na agenda Calendar (3)
  */
 function configuraEntrevistas_() {
+    
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName('Horários');
+  var range = sheet.getDataRange();
+  var values = range.getValues();
+  
+  var form = FormApp.getActiveForm();
+  
+  criaAgenda_(values, range);
+  criaFormulario_(ss, values);
+  ScriptApp.newTrigger('onFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
+  // ScriptApp.newTrigger('onFormSubmit').forForm(form).onFormSubmit().create()
+  ss.removeMenu('Entrevistas');
+  var menu = [{name: 'Resetar entrevistas', functionName: 'resetarEntrevistas_'},
+              {name: 'Mostrar propriedades', functionName: 'displayProps_'},
+              {name: 'Ajuda', functionName: 'displayHelp_'}
+             ];
+   ss.addMenu('Entrevistas', menu);
+  
+}
+
+function resetarEntrevistas_() {
+  
   if (PropertiesService.getScriptProperties().getProperty('cal_id')) {
     
-    Browser.msgBox('O Formulário de Agendamento já foi criado anteriormente!');
     var yes_no = Browser.Buttons.YES_NO;
-    var button_response = Browser.msgBox('Deseja limpar as variáveis internas do script?', '', yes_no);
+    var button_response = Browser.msgBox('Isto vai criar um novo formulário e uma nova agenda. Tem certeza?', '', yes_no);
     if (button_response == 'yes') {
       var props = PropertiesService.getScriptProperties()
-      var executou = props.getProperty('executou')
-      Browser.msgBox(executou);
       PropertiesService.getScriptProperties().deleteAllProperties();
+      var ss = SpreadsheetApp.getActive();
+      ss.removeMenu('Entrevistas');
+      var menu = [{name: 'Configurar entrevistas', functionName: 'configuraEntrevistas_'},
+              {name: 'Mostrar propriedades', functionName: 'displayProps_'},
+              {name: 'Ajuda', functionName: 'displayHelp_'}
+             ];
       
+      ss.addMenu('Entrevistas', menu);
       Browser.msgBox('O script foi resetado. Por favor, atualize o navegador.')
     }
-  }
-  else {
     
-    var ss = SpreadsheetApp.getActive();
-    var sheet = ss.getSheetByName('Horários');
-    var range = sheet.getDataRange();
-    var values = range.getValues();
-    
-    var form = FormApp.getActiveForm();
-    
-    criaAgenda_(values, range);
-    criaFormulario_(ss, values);
-    ScriptApp.newTrigger('onFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
-    // ScriptApp.newTrigger('onFormSubmit').forForm(form).onFormSubmit().create()
-    // ss.removeMenu('Entrevistas');
   }
 }
 
@@ -147,8 +167,9 @@ function criaFormulario_(ss, values) {
   }
 
   // Cria formulário e salva id para alterar posteriormente
-  var form = FormApp.create('Inscrição CAAE - Entrevista');
+  var form = FormApp.create('Agendamento Entrevistas');
   var form_id = form.getId();
+ 
   props.setProperty("form_id", form_id);
   
   // Somente uma resposta por usuário
@@ -203,28 +224,32 @@ function atualizaFormulario_(ss, values) {
   var old_len = old_choices.length;
   
   // Percorre a planilha colhendo as informações das entrevistas PARA REMOVER  
-  var new_choices = [];
-  for (var i = 1; i < values.length; i++) {
-    var session = values[i];
-    
-    var name = session[0];
-    var day = session[2].toLocaleDateString();
-    var time = session[3].toLocaleTimeString();
-    time = time.replace('0s BRST', '');
-    
-    var choice = day + ' ' + time  + ' - ' + name; 
-    if (session[5]) {
-           
+  if (old_len > 1) {
+    var new_choices = [];
+    for (var i = 1; i < values.length; i++) {
+      var session = values[i];
+      
+      var name = session[0];
+      var day = session[2].toLocaleDateString();
+      var time = session[3].toLocaleTimeString();
+      time = time.replace('0s BRST', '');
+      
+      var choice = day + ' ' + time  + ' - ' + name; 
+      if (session[5]) {
+        
+      }
+      else {
+        new_choices.push(choice);
+      }
     }
-    else {
-      new_choices.push(choice);
-    }
+    var new_len = new_choices.length;
+    lista_entrevistas.setChoiceValues(new_choices);
   }
   
-
+  else {
+    lista_entrevistas.setChoices([lista_entrevistas.createChoice('Nenhum horário disponível! Não envie sua resposta agora, tente novamente na próxima semana!', FormApp.PageNavigationType.RESTART)]);
+  }
   
-  var new_len = new_choices.length;
-  lista_entrevistas.setChoiceValues(new_choices);
   
   props.setProperty('old_len', old_len);
   props.setProperty('new_len', new_len);
@@ -260,14 +285,23 @@ function onFormSubmit(e) {
     // For every selection in the response, find the matching timeslot and title
     // in the spreadsheet and add the session data to the response array.
     if (e.namedValues[title] && e.namedValues[title] == choice) {
+      
       session[5] = user.email;
+      
+      var entrevistador = session[1];
+      var entrevistado = session[5];
+      var evento = session[4];
       range.setValues(values);
     }
   }
   
   
   atualizaFormulario_(ss, values);
-  //sendDoc_(user, response);
+  
+  
+  sendInvites(entrevistador, evento);
+  sendInvites(entrevistado, evento);
+  
 }
 
 /**
@@ -275,15 +309,13 @@ function onFormSubmit(e) {
  * @param {object} user An object that contains the user's name and email.
  * @param {Array<String[]>} response An array of data for the user's session choices.
  */
-function sendInvites_(user, response) {
+function sendInvites(email, event) {
   
   var id = PropertiesService.getScriptProperties().getProperty('cal_id');
   var cal = CalendarApp.getCalendarById(id);
 
-  for (var i = 0; i < response.length; i++) {
-    cal.getEventSeriesById(response[i][4]).addGuest(user.email);
-      
-  }
+  cal.getEventById(event).addGuest(email);  
+  
 }
 
 /**
@@ -299,33 +331,3 @@ function joinDateAndTime_(date, time) {
   date.setMinutes(time.getMinutes());
   return date;
 }
-
-/**
- * Create and share a personalized Google Doc that shows the user's itinerary.
- * @param {object} user An object that contains the user's name and email.
- * @param {Array<string[]>} response An array of data for the user's session choices.
- *
-function sendDoc_(user, response) {
-  var doc = DocumentApp.create('Conference Itinerary for ' + user.name)
-      .addEditor(user.email);
-  var body = doc.getBody();
-  var table = [['Session', 'Date', 'Time', 'Location']];
-  for (var i = 0; i < response.length; i++) {
-    table.push([response[i][0], response[i][1].toLocaleDateString(),
-        response[i][2].toLocaleTimeString(), response[i][4]]);
-  }
-  body.insertParagraph(0, doc.getName())
-      .setHeading(DocumentApp.ParagraphHeading.HEADING1);
-  table = body.appendTable(table);
-  table.getRow(0).editAsText().setBold(true);
-  doc.saveAndClose();
-
-  // Email a link to the Doc as well as a PDF copy.
-  MailApp.sendEmail({
-    to: user.email,
-    subject: doc.getName(),
-    body: 'Thanks for registering! Here\'s your itinerary: ' + doc.getUrl(),
-    attachments: doc.getAs(MimeType.PDF)
-  });
-}
-*/
