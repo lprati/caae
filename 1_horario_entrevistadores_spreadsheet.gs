@@ -3,26 +3,22 @@
  * 
  * Insere um menu personalizado que permite a execução das outras funcionalidades.
  */
+
+function myFunction() {
+ PropertiesService.getScriptProperties().deleteAllProperties(); 
+}
 function onOpen() {
-  if (PropertiesService.getScriptProperties().getProperty('cal_id')) {
-    var menu = [{name: 'Configurar entrevistas', functionName: 'configuraEntrevistas_'},
-                {name: 'Mostrar propriedades', functionName: 'displayProps_'},
+  if (PropertiesService.getScriptProperties().getProperty('initialized')) {
+    var menu = [{name: 'Resetar entrevistas', functionName: 'resetarEntrevistas_'},
                 {name: 'Ajuda', functionName: 'displayHelp_'}
                ];
   }
   else {
-    var menu = [{name: 'Resetar entrevistas', functionName: 'configuraEntrevistas_'},
-                {name: 'Mostrar propriedades', functionName: 'displayProps_'},
+    var menu = [{name: 'Configurar entrevistas', functionName: 'configuraEntrevistas_'},
                 {name: 'Ajuda', functionName: 'displayHelp_'}
-               ];  
+                ];
   }
   SpreadsheetApp.getActive().addMenu('Entrevistas', menu);
-}
-
-function displayProps_() {
-  for (var prop in PropertiesService.getScriptProperties().getProperties()) {
-    Browser.msgBox(prop + ' ' + PropertiesService.getScriptProperties().getProperty(prop))
-  }
 }
 
 /**
@@ -32,6 +28,7 @@ function displayProps_() {
  */ 
 function displayHelp_() {
   Browser.msgBox('*Cries in gs language*');
+  Browser.msgBox('(16) 99297 8591 (Whatsapp do Prati)');
 }
 
 
@@ -50,35 +47,64 @@ function configuraEntrevistas_() {
   
   criaAgenda_(values, range);
   criaFormulario_(ss, values);
-  ScriptApp.newTrigger('onFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
-  // ScriptApp.newTrigger('onFormSubmit').forForm(form).onFormSubmit().create()
+  var trigger = ScriptApp.newTrigger('onFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
+
   ss.removeMenu('Entrevistas');
   var menu = [{name: 'Resetar entrevistas', functionName: 'resetarEntrevistas_'},
-              {name: 'Mostrar propriedades', functionName: 'displayProps_'},
               {name: 'Ajuda', functionName: 'displayHelp_'}
              ];
+
    ss.addMenu('Entrevistas', menu);
+   var props = PropertiesService.getScriptProperties();
+   props.setProperty('trigger', trigger);
+   props.setProperty('initialized', true);
   
 }
 
 function resetarEntrevistas_() {
   
-  if (PropertiesService.getScriptProperties().getProperty('cal_id')) {
+  if (PropertiesService.getScriptProperties().getProperty('initialized')) {
     
+    var props = PropertiesService.getScriptProperties();
+    var trigger_array = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < trigger_array.length; i++) {
+      ScriptApp.deleteTrigger(trigger_array[i]);
+    }
+ 
     var yes_no = Browser.Buttons.YES_NO;
-    var button_response = Browser.msgBox('Isto vai criar um novo formulário e uma nova agenda. Tem certeza?', '', yes_no);
+    var button_response = Browser.msgBox('Isto vai apagar o formulário atual e criar um novo formulário. Tem certeza?', '', yes_no);
+    
     if (button_response == 'yes') {
-      var props = PropertiesService.getScriptProperties()
-      PropertiesService.getScriptProperties().deleteAllProperties();
-      var ss = SpreadsheetApp.getActive();
-      ss.removeMenu('Entrevistas');
-      var menu = [{name: 'Configurar entrevistas', functionName: 'configuraEntrevistas_'},
-              {name: 'Mostrar propriedades', functionName: 'displayProps_'},
-              {name: 'Ajuda', functionName: 'displayHelp_'}
-             ];
+
+      // Salva o id da agenda. Deleta o resto.      
+      var cal_id = props.getProperty('cal_id');
+      props.deleteAllProperties();
+      props.setProperty('cal_id', cal_id);
       
-      ss.addMenu('Entrevistas', menu);
+      // Apaga o formulário antigo
+      var files = DriveApp.getFilesByName("Agendamento Entrevistas");
+      while (files.hasNext()) {
+        var file = files.next();
+        file.setTrashed(true);
+      }
+
+      // Apaga a planilha
+      var ss = SpreadsheetApp.getActive();
+      var range = ss.getSheetByName('Horários').getDataRange();
+      var values = range.getValues();
+  
+      for (var i = 1; i < values.length; i++) {
+        for (var j = 0; j < values[i].lenght; j++) {
+          values[i][j] = "";
+        }
+      }
+      range.setValues(values);
+      
+      // Remove menu 
+      ss.removeMenu('Entrevistas');
+      
       Browser.msgBox('O script foi resetado. Por favor, atualize o navegador.')
+      
     }
     
   }
@@ -96,9 +122,25 @@ function criaAgenda_(values, range) {
   
   var props = PropertiesService.getScriptProperties();
   
-  // Cria uma nova agenda
-  var cal = CalendarApp.createCalendar('Entrevistas CAAE');
-  props.setProperty('cal_id', cal.getId());
+  // Check if cal exists
+  if (props.getProperty('cal_id')) {
+    var cal_id = props.getProperty('cal_id');  
+    var cal = CalendarApp.getCalendarById(cal_id);
+    if (cal) {
+      // Tudo ok
+    }
+    else {
+      // Calendario foi apagado, ainda que o id persista. Renova calendario e o id
+      cal = CalendarApp.createCalendar('Entrevistas CAAE'); 
+      props.setProperty('cal_id', cal.getId());
+    }
+    
+  }
+  else {
+    // If don't, create a new one
+    var cal = CalendarApp.createCalendar('Entrevistas CAAE');
+    props.setProperty('cal_id', cal.getId());
+  }
   
   // Percorre cada linha da tabela
   for (var i = 1; i < values.length; i++) {
@@ -174,7 +216,7 @@ function criaFormulario_(ss, values) {
   
   // Somente uma resposta por usuário
   // <---------- HABILITAR DEPOIS DOS TESTES!!!!! ---------->
-  // form.setLimitOneResponsePerUser(true);
+  form.setLimitOneResponsePerUser(true);
   
   // --> provavelmente desnecessário
   form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId()); 
