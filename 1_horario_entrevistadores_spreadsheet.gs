@@ -1,12 +1,15 @@
+/*
+ * Função auxiliar para deletar todas as propriedades do script
+*/
+function deleteAll() {
+ PropertiesService.getScriptProperties().deleteAllProperties(); 
+}
+
 /**
  * Uma função executada durante a abertura do documento Spreadsheet.
  * 
  * Insere um menu personalizado que permite a execução das outras funcionalidades.
  */
-
-function myFunction() {
- PropertiesService.getScriptProperties().deleteAllProperties(); 
-}
 function onOpen() {
   if (PropertiesService.getScriptProperties().getProperty('initialized')) {
     var menu = [{name: 'Resetar entrevistas', functionName: 'resetarEntrevistas_'},
